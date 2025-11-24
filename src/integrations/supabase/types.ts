@@ -14,16 +14,197 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          contact_line: string | null
+          contact_wa: string | null
+          created_at: string
+          division: string
+          full_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          contact_line?: string | null
+          contact_wa?: string | null
+          created_at?: string
+          division: string
+          full_name: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          contact_line?: string | null
+          contact_wa?: string | null
+          created_at?: string
+          division?: string
+          full_name?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      request_files: {
+        Row: {
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          request_id: string
+          uploaded_at: string
+        }
+        Insert: {
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          request_id: string
+          uploaded_at?: string
+        }
+        Update: {
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          request_id?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_files_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      requests: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          forwarded_to: string | null
+          id: string
+          project_description: string
+          project_title: string
+          reference_links: string[] | null
+          rejection_reason: string | null
+          request_type: string
+          requester_id: string
+          revision_notes: string | null
+          status: Database["public"]["Enums"]["request_status"]
+          submission_date: string
+          target_division: Database["public"]["Enums"]["target_division"]
+          updated_at: string
+          usage_date: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          forwarded_to?: string | null
+          id?: string
+          project_description: string
+          project_title: string
+          reference_links?: string[] | null
+          rejection_reason?: string | null
+          request_type: string
+          requester_id: string
+          revision_notes?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
+          submission_date?: string
+          target_division: Database["public"]["Enums"]["target_division"]
+          updated_at?: string
+          usage_date: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          forwarded_to?: string | null
+          id?: string
+          project_description?: string
+          project_title?: string
+          reference_links?: string[] | null
+          rejection_reason?: string | null
+          request_type?: string
+          requester_id?: string
+          revision_notes?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
+          submission_date?: string
+          target_division?: Database["public"]["Enums"]["target_division"]
+          updated_at?: string
+          usage_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "requests_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_staff: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "admin"
+        | "staff_cd"
+        | "staff_medpro"
+        | "staff_ms"
+        | "staff_cc"
+        | "requester"
+      request_status:
+        | "pending_approval"
+        | "in_progress"
+        | "revision_needed"
+        | "completed"
+        | "rejected"
+        | "forwarded"
+      target_division: "CD" | "MEDPRO" | "MS" | "CC"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +331,24 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "admin",
+        "staff_cd",
+        "staff_medpro",
+        "staff_ms",
+        "staff_cc",
+        "requester",
+      ],
+      request_status: [
+        "pending_approval",
+        "in_progress",
+        "revision_needed",
+        "completed",
+        "rejected",
+        "forwarded",
+      ],
+      target_division: ["CD", "MEDPRO", "MS", "CC"],
+    },
   },
 } as const
