@@ -1,59 +1,118 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Clock, CheckCircle2, AlertCircle, XCircle, ArrowRight } from "lucide-react";
+import { ArrowLeft, Clock, CheckCircle2, AlertCircle, XCircle, ArrowRight, Search, LogOut } from "lucide-react";
+import { format } from "date-fns";
+
+interface Request {
+  id: string;
+  project_title: string;
+  target_division: string;
+  request_type: string;
+  status: string;
+  usage_date: string;
+  submission_date: string;
+  requester: {
+    full_name: string;
+    division: string;
+  };
+}
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  
-  // Mock data - akan diganti dengan real data dari backend
-  const mockRequests = [
-    {
-      id: "REQ-001",
-      title: "Social Media Feed - Opening Ceremony",
-      targetDivision: "Creative Design",
-      requester: "Event Division",
-      status: "pending",
-      deadline: "2026-02-15",
-      createdAt: "2026-01-28",
-    },
-    {
-      id: "REQ-002",
-      title: "Opening Video Teaser",
-      targetDivision: "Media Production",
-      requester: "Documentation",
-      status: "in_progress",
-      deadline: "2026-02-20",
-      createdAt: "2026-01-25",
-    },
-    {
-      id: "REQ-003",
-      title: "Instagram Campaign Strategy",
-      targetDivision: "Marketing Strategist",
-      requester: "Social Media Team",
-      status: "completed",
-      deadline: "2026-01-30",
-      createdAt: "2026-01-15",
-    },
-    {
-      id: "REQ-004",
-      title: "Event Highlight Captions",
-      targetDivision: "Content Creator",
-      requester: "Event Division",
-      status: "revision",
-      deadline: "2026-02-10",
-      createdAt: "2026-01-20",
-    },
-  ];
+  const { user, loading, signOut } = useAuth();
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [filteredRequests, setFilteredRequests] = useState<Request[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loadingRequests, setLoadingRequests] = useState(true);
 
-  const [requests] = useState(mockRequests);
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/login");
+    } else if (user) {
+      loadRequests();
+      subscribeToChanges();
+    }
+  }, [user, loading, navigate]);
+
+  useEffect(() => {
+    filterRequests();
+  }, [requests, searchQuery]);
+
+  const subscribeToChanges = () => {
+    const channel = supabase
+      .channel('requests-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'requests'
+        },
+        () => {
+          loadRequests();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const loadRequests = async () => {
+    if (!user) return;
+
+    try {
+      setLoadingRequests(true);
+      
+      const { data, error } = await supabase
+        .from("requests")
+        .select(`
+          *,
+          requester:profiles!requester_id (
+            full_name,
+            division
+          )
+        `)
+        .eq("requester_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      setRequests(data as any || []);
+    } catch (error) {
+      console.error("Error loading requests:", error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const filterRequests = () => {
+    if (!searchQuery) {
+      setFilteredRequests(requests);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = requests.filter(req =>
+      req.project_title.toLowerCase().includes(query) ||
+      req.target_division.toLowerCase().includes(query) ||
+      req.request_type.toLowerCase().includes(query) ||
+      req.status.toLowerCase().includes(query)
+    );
+    setFilteredRequests(filtered);
+  };
 
   const getStatusConfig = (status: string) => {
-    const configs = {
-      pending: {
+    const configs: Record<string, any> = {
+      pending_approval: {
         icon: Clock,
         label: "Pending Approval",
         color: "bg-orange/20 text-orange border-orange/50",
@@ -63,7 +122,7 @@ const Dashboard = () => {
         label: "In Progress",
         color: "bg-cyan/20 text-cyan border-cyan/50",
       },
-      revision: {
+      revision_needed: {
         icon: AlertCircle,
         label: "Revision Needed",
         color: "bg-purple/20 text-purple border-purple/50",
@@ -78,8 +137,13 @@ const Dashboard = () => {
         label: "Rejected",
         color: "bg-destructive/20 text-destructive border-destructive/50",
       },
+      forwarded: {
+        icon: ArrowRight,
+        label: "Forwarded",
+        color: "bg-cyan/20 text-cyan border-cyan/50",
+      },
     };
-    return configs[status as keyof typeof configs] || configs.pending;
+    return configs[status] || configs.pending_approval;
   };
 
   const stats = [
@@ -100,15 +164,56 @@ const Dashboard = () => {
     },
     {
       label: "Pending",
-      value: requests.filter((r) => r.status === "pending").length,
+      value: requests.filter((r) => r.status === "pending_approval").length,
       color: "from-orange to-pink",
     },
   ];
 
   const filterByStatus = (status?: string) => {
-    if (!status) return requests;
-    return requests.filter((r) => r.status === status);
+    if (!status) return filteredRequests;
+    return filteredRequests.filter((r) => r.status === status);
   };
+
+  const RequestCard = ({ request }: { request: Request }) => {
+    const statusConfig = getStatusConfig(request.status);
+    const StatusIcon = statusConfig.icon;
+    
+    return (
+      <Card
+        className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
+        onClick={() => navigate(`/request/${request.id}`)}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <Badge className={`${statusConfig.color} border`}>
+                <StatusIcon className="w-3 h-3 mr-1" />
+                {statusConfig.label}
+              </Badge>
+            </div>
+            <h3 className="text-lg font-semibold mb-1">{request.project_title}</h3>
+            <p className="text-sm text-muted-foreground">
+              {request.target_division} • {request.request_type}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>Deadline: {format(new Date(request.usage_date), "PPP")}</span>
+          <span>•</span>
+          <span>Submitted: {format(new Date(request.submission_date), "PPP")}</span>
+        </div>
+      </Card>
+    );
+  };
+
+  if (loading || loadingRequests) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -125,12 +230,18 @@ const Dashboard = () => {
             <ArrowLeft className="w-4 h-4" />
             Back to Home
           </Button>
-          <Button 
-            onClick={() => navigate("/request")}
-            className="bg-gradient-to-r from-purple to-pink hover:opacity-90"
-          >
-            New Request
-          </Button>
+          <div className="flex gap-3">
+            <Button 
+              onClick={() => navigate("/request")}
+              className="bg-gradient-to-r from-purple to-pink hover:opacity-90"
+            >
+              New Request
+            </Button>
+            <Button variant="outline" onClick={signOut} className="gap-2">
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
+          </div>
         </div>
       </nav>
 
@@ -138,10 +249,10 @@ const Dashboard = () => {
       <div className="relative z-10 container mx-auto px-4 py-12">
         <div className="mb-8 animate-slide-up">
           <h1 className="text-4xl font-bold mb-2">
-            Request <span className="gradient-text">Dashboard</span>
+            My <span className="gradient-text">Requests</span>
           </h1>
           <p className="text-muted-foreground">
-            Track and manage all your creative requests
+            Track and manage your creative requests
           </p>
         </div>
 
@@ -161,178 +272,67 @@ const Dashboard = () => {
           ))}
         </div>
 
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search requests..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="glass border-border/50 pl-10"
+            />
+          </div>
+        </div>
+
         {/* Requests List */}
         <Card className="glass border-border/50 p-6">
           <Tabs defaultValue="all" className="w-full">
             <TabsList className="glass border-border/50 mb-6">
               <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="pending">Pending</TabsTrigger>
+              <TabsTrigger value="pending_approval">Pending</TabsTrigger>
               <TabsTrigger value="in_progress">In Progress</TabsTrigger>
               <TabsTrigger value="completed">Completed</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="space-y-4">
-              {requests.map((request) => {
-                const statusConfig = getStatusConfig(request.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <Card
-                    key={request.id}
-                    className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {request.id}
-                          </span>
-                          <Badge className={`${statusConfig.color} border`}>
-                            <StatusIcon className="w-3 h-3 mr-1" />
-                            {statusConfig.label}
-                          </Badge>
-                        </div>
-                        <h3 className="text-lg font-semibold mb-1">{request.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {request.targetDivision} • Requested by {request.requester}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>Deadline: {new Date(request.deadline).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>Created: {new Date(request.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </Card>
-                );
-              })}
+              {filteredRequests.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No requests found</p>
+              ) : (
+                filteredRequests.map((request) => (
+                  <RequestCard key={request.id} request={request} />
+                ))
+              )}
             </TabsContent>
 
-            <TabsContent value="pending" className="space-y-4">
-              {filterByStatus("pending").map((request) => {
-                const statusConfig = getStatusConfig(request.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <Card
-                    key={request.id}
-                    className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {request.id}
-                          </span>
-                          <Badge className={`${statusConfig.color} border`}>
-                            <StatusIcon className="w-3 h-3 mr-1" />
-                            {statusConfig.label}
-                          </Badge>
-                        </div>
-                        <h3 className="text-lg font-semibold mb-1">{request.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {request.targetDivision} • Requested by {request.requester}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>Deadline: {new Date(request.deadline).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>Created: {new Date(request.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </Card>
-                );
-              })}
+            <TabsContent value="pending_approval" className="space-y-4">
+              {filterByStatus("pending_approval").length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No pending requests</p>
+              ) : (
+                filterByStatus("pending_approval").map((request) => (
+                  <RequestCard key={request.id} request={request} />
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="in_progress" className="space-y-4">
-              {filterByStatus("in_progress").map((request) => {
-                const statusConfig = getStatusConfig(request.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <Card
-                    key={request.id}
-                    className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {request.id}
-                          </span>
-                          <Badge className={`${statusConfig.color} border`}>
-                            <StatusIcon className="w-3 h-3 mr-1" />
-                            {statusConfig.label}
-                          </Badge>
-                        </div>
-                        <h3 className="text-lg font-semibold mb-1">{request.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {request.targetDivision} • Requested by {request.requester}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>Deadline: {new Date(request.deadline).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>Created: {new Date(request.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </Card>
-                );
-              })}
+              {filterByStatus("in_progress").length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No requests in progress</p>
+              ) : (
+                filterByStatus("in_progress").map((request) => (
+                  <RequestCard key={request.id} request={request} />
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="completed" className="space-y-4">
-              {filterByStatus("completed").map((request) => {
-                const statusConfig = getStatusConfig(request.status);
-                const StatusIcon = statusConfig.icon;
-                
-                return (
-                  <Card
-                    key={request.id}
-                    className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {request.id}
-                          </span>
-                          <Badge className={`${statusConfig.color} border`}>
-                            <StatusIcon className="w-3 h-3 mr-1" />
-                            {statusConfig.label}
-                          </Badge>
-                        </div>
-                        <h3 className="text-lg font-semibold mb-1">{request.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {request.targetDivision} • Requested by {request.requester}
-                        </p>
-                      </div>
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>Deadline: {new Date(request.deadline).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>Created: {new Date(request.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </Card>
-                );
-              })}
+              {filterByStatus("completed").length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No completed requests</p>
+              ) : (
+                filterByStatus("completed").map((request) => (
+                  <RequestCard key={request.id} request={request} />
+                ))
+              )}
             </TabsContent>
           </Tabs>
         </Card>

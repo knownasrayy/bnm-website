@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useFileUpload } from "@/hooks/useFileUpload";
+import { FileUploadZone } from "@/components/FileUploadZone";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,38 +13,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { CalendarIcon, ArrowLeft, Upload, AlertCircle } from "lucide-react";
+import { CalendarIcon, ArrowLeft, AlertCircle } from "lucide-react";
 import { format, differenceInDays, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 
 const Request = () => {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+  const { uploadFiles, uploading, uploadedFiles, removeFile, setUploadedFiles } = useFileUpload();
   const [date, setDate] = useState<Date>();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   
   const [formData, setFormData] = useState({
     requesterName: "",
     division: "",
-    contact: "",
+    contactWa: "",
+    contactLine: "",
     targetDivision: "",
     requestType: "",
-    title: "",
-    description: "",
-    references: "",
+    projectTitle: "",
+    projectDescription: "",
+    referenceLinks: "",
   });
 
+  useEffect(() => {
+    if (!loading && !user) {
+      toast.error("Please login to create a request");
+      navigate("/login");
+    }
+  }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (user) {
+      // Load user profile
+      loadUserProfile();
+    }
+  }, [user]);
+
+  const loadUserProfile = async () => {
+    if (!user) return;
+    
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("full_name, division, contact_wa, contact_line")
+      .eq("id", user.id)
+      .single();
+
+    if (error) {
+      console.error("Error loading profile:", error);
+      return;
+    }
+
+    if (data) {
+      setFormData(prev => ({
+        ...prev,
+        requesterName: data.full_name || "",
+        division: data.division || "",
+        contactWa: data.contact_wa || "",
+        contactLine: data.contact_line || "",
+      }));
+    }
+  };
+
   const divisions = [
-    { value: "cd", label: "Creative Design", minDays: 7 },
-    { value: "medpro", label: "Media Production", minDays: 8 },
-    { value: "ms", label: "Marketing Strategist", minDays: 8 },
-    { value: "cc", label: "Content Creator", minDays: 5 },
+    { value: "CD", label: "Creative Design", minDays: 7 },
+    { value: "MEDPRO", label: "Media Production", minDays: 8 },
+    { value: "MS", label: "Marketing Strategist", minDays: 8 },
+    { value: "CC", label: "Content Creator", minDays: 5 },
   ];
 
-  const requestTypes = {
-    cd: ["Feed Design", "Story Design", "Poster", "Banner", "Logo"],
-    medpro: ["Video Editing", "Motion Graphics", "Live Report", "Documentary"],
-    ms: ["Social Media Strategy", "Campaign Planning", "Content Calendar"],
-    cc: ["Caption Writing", "Content Ideas", "Social Media Post"],
+  const requestTypes: Record<string, string[]> = {
+    CD: ["Feed Design", "Story Design", "Poster", "Banner", "Logo"],
+    MEDPRO: ["Video Editing", "Motion Graphics", "Live Report", "Documentary"],
+    MS: ["Social Media Strategy", "Campaign Planning", "Content Calendar"],
+    CC: ["Caption Writing", "Content Ideas", "Social Media Post"],
   };
 
   const validateDeadline = () => {
@@ -61,19 +108,32 @@ const Request = () => {
     return { valid: true, message: "" };
   };
 
+  const handleFilesSelected = (files: File[]) => {
+    setPendingFiles([...pendingFiles, ...files]);
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(pendingFiles.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!user) {
+      toast.error("Please login to submit a request");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // Validate all required fields
+    // Validate required fields
     const requiredFields = [
       'requesterName',
       'division',
-      'contact',
       'targetDivision',
       'requestType',
-      'title',
-      'description'
+      'projectTitle',
+      'projectDescription'
     ];
     
     const emptyFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
@@ -91,18 +151,58 @@ const Request = () => {
       return;
     }
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast.success("Request submitted successfully! 🎉", {
-      description: "Your request is now pending approval from the BnM team.",
-    });
-    
-    setIsSubmitting(false);
-    navigate("/dashboard");
+    try {
+      // Parse reference links
+      const links = formData.referenceLinks
+        .split("\n")
+        .map(link => link.trim())
+        .filter(link => link.length > 0);
+
+      // Create request
+      const { data: requestData, error: requestError } = await supabase
+        .from("requests")
+        .insert({
+          requester_id: user.id,
+          target_division: formData.targetDivision as any,
+          request_type: formData.requestType,
+          project_title: formData.projectTitle,
+          project_description: formData.projectDescription,
+          reference_links: links.length > 0 ? links : null,
+          usage_date: date!.toISOString(),
+          status: "pending_approval",
+        })
+        .select()
+        .single();
+
+      if (requestError) throw requestError;
+
+      // Upload files if any
+      if (pendingFiles.length > 0) {
+        await uploadFiles(pendingFiles, requestData.id);
+      }
+
+      toast.success("Request submitted successfully! 🎉", {
+        description: "Your request is now pending approval from the BnM team.",
+      });
+      
+      navigate("/dashboard");
+    } catch (error: any) {
+      console.error("Submit error:", error);
+      toast.error(error.message || "Failed to submit request");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const deadlineValidation = validateDeadline();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -168,15 +268,28 @@ const Request = () => {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="contact">Contact (WA/Line) *</Label>
-                <Input
-                  id="contact"
-                  placeholder="081234567890 or LINE ID"
-                  value={formData.contact}
-                  onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                  className="glass border-border/50"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="contactWa">WhatsApp</Label>
+                  <Input
+                    id="contactWa"
+                    placeholder="081234567890"
+                    value={formData.contactWa}
+                    onChange={(e) => setFormData({ ...formData, contactWa: e.target.value })}
+                    className="glass border-border/50"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="contactLine">LINE ID</Label>
+                  <Input
+                    id="contactLine"
+                    placeholder="Your LINE ID"
+                    value={formData.contactLine}
+                    onChange={(e) => setFormData({ ...formData, contactLine: e.target.value })}
+                    className="glass border-border/50"
+                  />
+                </div>
               </div>
             </div>
 
@@ -221,7 +334,7 @@ const Request = () => {
                     </SelectTrigger>
                     <SelectContent className="glass border-border/50">
                       {formData.targetDivision &&
-                        requestTypes[formData.targetDivision as keyof typeof requestTypes]?.map((type) => (
+                        requestTypes[formData.targetDivision]?.map((type) => (
                           <SelectItem key={type} value={type}>
                             {type}
                           </SelectItem>
@@ -270,8 +383,8 @@ const Request = () => {
                 <Input
                   id="title"
                   placeholder="Brief title for your request"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  value={formData.projectTitle}
+                  onChange={(e) => setFormData({ ...formData, projectTitle: e.target.value })}
                   className="glass border-border/50"
                 />
               </div>
@@ -281,8 +394,8 @@ const Request = () => {
                 <Textarea
                   id="description"
                   placeholder="Describe your requirements, concept, and any specific details..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  value={formData.projectDescription}
+                  onChange={(e) => setFormData({ ...formData, projectDescription: e.target.value })}
                   className="glass border-border/50 min-h-32"
                 />
               </div>
@@ -291,24 +404,27 @@ const Request = () => {
                 <Label htmlFor="references">References (Optional)</Label>
                 <Textarea
                   id="references"
-                  placeholder="Links to inspiration, examples, or reference materials..."
-                  value={formData.references}
-                  onChange={(e) => setFormData({ ...formData, references: e.target.value })}
+                  placeholder="Add links (one per line)..."
+                  value={formData.referenceLinks}
+                  onChange={(e) => setFormData({ ...formData, referenceLinks: e.target.value })}
                   className="glass border-border/50"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="assets">Upload Assets (Optional)</Label>
-                <div className="glass border-border/50 border-2 border-dashed rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                  <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground mb-1">
-                    Click to upload or drag and drop
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    PNG, JPG, PDF up to 10MB
-                  </p>
-                </div>
+                <Label>Upload Assets (Optional)</Label>
+                <FileUploadZone
+                  onFilesSelected={handleFilesSelected}
+                  uploadedFiles={pendingFiles.map((file, idx) => ({
+                    id: idx.toString(),
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    path: "",
+                  }))}
+                  onRemoveFile={(id) => removePendingFile(parseInt(id))}
+                  disabled={uploading || isSubmitting}
+                />
               </div>
             </div>
 
@@ -319,12 +435,13 @@ const Request = () => {
                 variant="outline"
                 onClick={() => navigate("/")}
                 className="flex-1 glass"
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                disabled={isSubmitting || !deadlineValidation.valid}
+                disabled={isSubmitting || uploading || !deadlineValidation.valid}
                 className="flex-1 bg-gradient-to-r from-purple to-pink hover:opacity-90"
               >
                 {isSubmitting ? "Submitting..." : "Submit Request"}
