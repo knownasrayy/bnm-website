@@ -1,16 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
 import { ArrowLeft, Sparkles } from "lucide-react";
 
 const Login = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
+  const { signIn, signUp, user, loading } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [loginData, setLoginData] = useState({
     email: "",
@@ -18,36 +19,39 @@ const Login = () => {
   });
   
   const [signupData, setSignupData] = useState({
-    name: "",
+    fullName: "",
     email: "",
     password: "",
     division: "",
   });
 
+  useEffect(() => {
+    if (user && !loading) {
+      navigate("/dashboard");
+    }
+  }, [user, loading, navigate]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast.success("Login successful! 🎉");
-    setIsLoading(false);
-    navigate("/dashboard");
+    setIsSubmitting(true);
+    await signIn(loginData.email, loginData.password);
+    setIsSubmitting(false);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast.success("Account created successfully! 🎉", {
-      description: "You can now login with your credentials.",
-    });
-    setIsLoading(false);
+    setIsSubmitting(true);
+    await signUp(signupData.email, signupData.password, signupData.fullName, signupData.division);
+    setIsSubmitting(false);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -114,10 +118,10 @@ const Login = () => {
 
                 <Button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                   className="w-full bg-gradient-to-r from-purple to-pink hover:opacity-90"
                 >
-                  {isLoading ? "Logging in..." : "Login"}
+                  {isSubmitting ? "Logging in..." : "Login"}
                 </Button>
               </form>
             </TabsContent>
@@ -130,8 +134,8 @@ const Login = () => {
                     id="signup-name"
                     type="text"
                     placeholder="Your full name"
-                    value={signupData.name}
-                    onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
+                    value={signupData.fullName}
+                    onChange={(e) => setSignupData({ ...signupData, fullName: e.target.value })}
                     className="glass border-border/50"
                     required
                   />
@@ -173,15 +177,16 @@ const Login = () => {
                     onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
                     className="glass border-border/50"
                     required
+                    minLength={6}
                   />
                 </div>
 
                 <Button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                   className="w-full bg-gradient-to-r from-cyan to-purple hover:opacity-90"
                 >
-                  {isLoading ? "Creating account..." : "Create Account"}
+                  {isSubmitting ? "Creating account..." : "Create Account"}
                 </Button>
               </form>
             </TabsContent>
