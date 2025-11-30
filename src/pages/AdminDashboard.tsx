@@ -8,7 +8,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Clock, CheckCircle2, AlertCircle, XCircle, ArrowRight, Search, LogOut } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RequestActions } from "@/components/RequestActions";
+import { ArrowLeft, Search, LogOut, Users, Clock, CheckCircle2, AlertCircle, XCircle, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 
 interface Request {
@@ -25,35 +27,36 @@ interface Request {
   };
 }
 
-const Dashboard = () => {
+const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user, loading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const { isAdmin, isStaff, loading: roleLoading } = useUserRole();
   const [requests, setRequests] = useState<Request[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<Request[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState<string>("all");
   const [loadingRequests, setLoadingRequests] = useState(true);
 
   useEffect(() => {
-    if (!loading && !roleLoading) {
+    if (!authLoading && !roleLoading) {
       if (!user) {
         navigate("/login");
-      } else if (isAdmin || isStaff) {
-        navigate("/admin");
+      } else if (!isAdmin && !isStaff) {
+        navigate("/dashboard");
       } else {
         loadRequests();
         subscribeToChanges();
       }
     }
-  }, [user, loading, roleLoading, isAdmin, isStaff, navigate]);
+  }, [user, authLoading, roleLoading, isAdmin, isStaff, navigate]);
 
   useEffect(() => {
     filterRequests();
-  }, [requests, searchQuery]);
+  }, [requests, searchQuery, divisionFilter]);
 
   const subscribeToChanges = () => {
     const channel = supabase
-      .channel('requests-changes')
+      .channel('admin-requests-changes')
       .on(
         'postgres_changes',
         {
@@ -87,7 +90,6 @@ const Dashboard = () => {
             division
           )
         `)
-        .eq("requester_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -101,18 +103,22 @@ const Dashboard = () => {
   };
 
   const filterRequests = () => {
-    if (!searchQuery) {
-      setFilteredRequests(requests);
-      return;
+    let filtered = requests;
+
+    if (divisionFilter !== "all") {
+      filtered = filtered.filter(req => req.target_division === divisionFilter);
     }
 
-    const query = searchQuery.toLowerCase();
-    const filtered = requests.filter(req =>
-      req.project_title.toLowerCase().includes(query) ||
-      req.target_division.toLowerCase().includes(query) ||
-      req.request_type.toLowerCase().includes(query) ||
-      req.status.toLowerCase().includes(query)
-    );
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(req =>
+        req.project_title.toLowerCase().includes(query) ||
+        req.target_division.toLowerCase().includes(query) ||
+        req.request_type.toLowerCase().includes(query) ||
+        req.status.toLowerCase().includes(query)
+      );
+    }
+
     setFilteredRequests(filtered);
   };
 
@@ -157,21 +163,25 @@ const Dashboard = () => {
       label: "Total Requests",
       value: requests.length,
       color: "from-purple to-pink",
-    },
-    {
-      label: "In Progress",
-      value: requests.filter((r) => r.status === "in_progress").length,
-      color: "from-cyan to-purple",
-    },
-    {
-      label: "Completed",
-      value: requests.filter((r) => r.status === "completed").length,
-      color: "from-green-500 to-cyan",
+      icon: Users,
     },
     {
       label: "Pending",
       value: requests.filter((r) => r.status === "pending_approval").length,
       color: "from-orange to-pink",
+      icon: Clock,
+    },
+    {
+      label: "In Progress",
+      value: requests.filter((r) => r.status === "in_progress").length,
+      color: "from-cyan to-purple",
+      icon: ArrowRight,
+    },
+    {
+      label: "Completed",
+      value: requests.filter((r) => r.status === "completed").length,
+      color: "from-green-500 to-cyan",
+      icon: CheckCircle2,
     },
   ];
 
@@ -185,10 +195,7 @@ const Dashboard = () => {
     const StatusIcon = statusConfig.icon;
     
     return (
-      <Card
-        className="glass border-border/50 p-6 hover:border-primary/50 transition-all cursor-pointer"
-        onClick={() => navigate(`/request/${request.id}`)}
-      >
+      <Card className="glass border-border/50 p-6 hover:border-primary/50 transition-all">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
@@ -196,24 +203,43 @@ const Dashboard = () => {
                 <StatusIcon className="w-3 h-3 mr-1" />
                 {statusConfig.label}
               </Badge>
+              <Badge variant="outline">{request.target_division}</Badge>
             </div>
             <h3 className="text-lg font-semibold mb-1">{request.project_title}</h3>
-            <p className="text-sm text-muted-foreground">
-              {request.target_division} • {request.request_type}
+            <p className="text-sm text-muted-foreground mb-2">
+              {request.request_type}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Requester: {request.requester?.full_name} ({request.requester?.division})
             </p>
           </div>
         </div>
         
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
           <span>Deadline: {format(new Date(request.usage_date), "PPP")}</span>
           <span>•</span>
           <span>Submitted: {format(new Date(request.submission_date), "PPP")}</span>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/request/${request.id}`)}
+          >
+            View Details
+          </Button>
+          <RequestActions
+            requestId={request.id}
+            currentStatus={request.status}
+            onUpdate={loadRequests}
+          />
         </div>
       </Card>
     );
   };
 
-  if (loading || loadingRequests) {
+  if (authLoading || roleLoading || loadingRequests) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
@@ -223,13 +249,11 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 right-10 w-96 h-96 bg-purple rounded-full mix-blend-screen filter blur-3xl opacity-10 animate-float" />
         <div className="absolute bottom-20 left-10 w-80 h-80 bg-cyan rounded-full mix-blend-screen filter blur-3xl opacity-10 animate-float" style={{ animationDelay: '1s' }} />
       </div>
 
-      {/* Navigation */}
       <nav className="relative z-10 border-b border-border/50 backdrop-blur-xl bg-background/50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Button variant="ghost" onClick={() => navigate("/")} className="gap-2">
@@ -237,10 +261,7 @@ const Dashboard = () => {
             Back to Home
           </Button>
           <div className="flex gap-3">
-            <Button 
-              onClick={() => navigate("/request")}
-              className="bg-gradient-to-r from-purple to-pink hover:opacity-90"
-            >
+            <Button onClick={() => navigate("/request")} className="bg-gradient-to-r from-purple to-pink hover:opacity-90">
               New Request
             </Button>
             <Button variant="outline" onClick={signOut} className="gap-2">
@@ -251,36 +272,39 @@ const Dashboard = () => {
         </div>
       </nav>
 
-      {/* Main Content */}
       <div className="relative z-10 container mx-auto px-4 py-12">
         <div className="mb-8 animate-slide-up">
           <h1 className="text-4xl font-bold mb-2">
-            My <span className="gradient-text">Requests</span>
+            {isAdmin ? "Admin" : "Staff"} <span className="gradient-text">Dashboard</span>
           </h1>
           <p className="text-muted-foreground">
-            Track and manage your creative requests
+            Manage and review all creative requests
           </p>
         </div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
-            <Card
-              key={index}
-              className="glass border-border/50 p-6"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              <div className={`inline-block px-3 py-1 rounded-full bg-gradient-to-r ${stat.color} text-white text-xs font-medium mb-3`}>
-                {stat.label}
-              </div>
-              <div className="text-4xl font-bold gradient-text">{stat.value}</div>
-            </Card>
-          ))}
+          {stats.map((stat, index) => {
+            const Icon = stat.icon;
+            return (
+              <Card
+                key={index}
+                className="glass border-border/50 p-6"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`inline-block px-3 py-1 rounded-full bg-gradient-to-r ${stat.color} text-white text-xs font-medium`}>
+                    {stat.label}
+                  </div>
+                  <Icon className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div className="text-4xl font-bold gradient-text">{stat.value}</div>
+              </Card>
+            );
+          })}
         </div>
 
-        {/* Search Bar */}
-        <div className="mb-6">
-          <div className="relative">
+        <div className="flex flex-col md:flex-row gap-4 mb-6">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search requests..."
@@ -289,9 +313,20 @@ const Dashboard = () => {
               className="glass border-border/50 pl-10"
             />
           </div>
+          <Select value={divisionFilter} onValueChange={setDivisionFilter}>
+            <SelectTrigger className="glass border-border/50 w-full md:w-[200px]">
+              <SelectValue placeholder="Filter by division" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Divisions</SelectItem>
+              <SelectItem value="CD">Creative Design</SelectItem>
+              <SelectItem value="MEDPRO">Media Production</SelectItem>
+              <SelectItem value="MS">Marketing Strategist</SelectItem>
+              <SelectItem value="CC">Content Creator</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Requests List */}
         <Card className="glass border-border/50 p-6">
           <Tabs defaultValue="all" className="w-full">
             <TabsList className="glass border-border/50 mb-6">
@@ -347,4 +382,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default AdminDashboard;
