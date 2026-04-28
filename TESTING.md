@@ -42,6 +42,7 @@ Buka browser ke **http://localhost:8080**
 | [Sesi 7](#sesi-7--error-handling) | Error Handling | Error Handling | Browser + CLI |
 | [Sesi 8](#sesi-8--multi-client-demo-cli) | Multi Client CLI | Multi Client | Terminal |
 | [Sesi 9](#sesi-9--automated-audit-script) | Automated Audit | Semua kriteria | Terminal |
+| [Sesi 10](#sesi-10--grpc-websocket-integration) | WebSocket Gateway | Hub & Bridge | Browser |
 
 ---
 
@@ -417,7 +418,38 @@ SESI 8 — Multi Client CLI
 
 SESI 9 — Automated Audit
   [ ] node audit-test.mjs → 27/27 PASS, Score: 100%
+
+SESI 10 — gRPC-WebSocket Hub
+  [ ] Navigasi ke `/ws-monitor` → Status "System Online" (Hijau)
+  [ ] Metrics & Chart terupdate otomatis (Event-Driven UI)
+  [ ] Pesan "System Alert" muncul otomatis (Server-Initiated)
+  [ ] Kirim Broadcast via Dispatcher → Toast sukses muncul (Command & Control)
 ```
+
+---
+
+## Sesi 10 — gRPC-WebSocket Integration
+
+**Tujuan**: Memverifikasi jembatan antara gRPC dan WebSocket sesuai requirement tugas.
+
+### Langkah-langkah
+
+1. Buka **http://localhost:8080/ws-monitor**
+2. Perhatikan bagian **"Operational Feed"**:
+   - ✅ Harus ada log `System Online` dan `Session Started`.
+3. Tunggu hingga 60 detik:
+   - ✅ Panel **"Global Broadcast"** atau **Feed** harus menerima pesan `System Health Check` secara otomatis (Server-Initiated).
+4. Gunakan **"Operations Dispatcher"**:
+   - Masukkan ID: `REQ-12345`
+   - Pilih Status: `Revision`
+   - Klik **"Commit Change"**
+   - ✅ Toast harus muncul: *"Command UPDATE_STATUS dikirim via WebSocket -> gRPC"*.
+   - ✅ Log di terminal `ws-server.js` akan mencatat pemanggilan gRPC.
+
+> 💡 **Requirement Check**:
+> - **Event-Driven**: UI (Chart/Feed) berubah tanpa refresh.
+> - **Server-Initiated**: Alert muncul tanpa permintaan client.
+> - **C&C Bridge**: Instruksi UI memicu fungsi gRPC di backend.
 
 ---
 
