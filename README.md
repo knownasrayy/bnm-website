@@ -358,6 +358,21 @@ npm run client:a    # Demo: Divisi Acara
 npm run client:b    # Demo: Admin BnM
 ```
 
+### Deployment via Docker (Rekomendasi)
+
+Jika kamu ingin menjalankan seluruh sistem (4 server) hanya dengan satu perintah:
+
+```bash
+# Build dan jalankan semua container
+docker-compose up --build
+```
+
+Sistem akan otomatis berjalan di port yang sama:
+- Frontend: `http://localhost:8080`
+- REST Gateway: `http://localhost:3001`
+- WS Gateway: `http://localhost:3002`
+- gRPC Server: `localhost:50051`
+
 ---
 
 ## 🖥️ Halaman Aplikasi

@@ -48,7 +48,8 @@ const requestPkg   = grpc.loadPackageDefinition(protoLoader.loadSync(join(PROTO_
 const notifPkg     = grpc.loadPackageDefinition(protoLoader.loadSync(join(PROTO_DIR, 'notification.proto'), PROTO_OPTIONS));
 const dashboardPkg = grpc.loadPackageDefinition(protoLoader.loadSync(join(PROTO_DIR, 'dashboard.proto'),    PROTO_OPTIONS));
 
-const GRPC_ADDR = `localhost:${process.env.GRPC_PORT || 50051}`;
+const GRPC_HOST = process.env.GRPC_HOST || 'localhost';
+const GRPC_ADDR = `${GRPC_HOST}:${process.env.GRPC_PORT || 50051}`;
 const CREDS     = grpc.credentials.createInsecure();
 
 const requestClient  = new requestPkg.bnm_ilits.RequestService(GRPC_ADDR, CREDS);

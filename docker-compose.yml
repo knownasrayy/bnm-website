@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  grpc-server:
+    build: .
+    command: npm run grpc
+    ports:
+      - "50051:50051"
+    environment:
+      - GRPC_PORT=50051
+
+  rest-gateway:
+    build: .
+    command: npm run gateway
+    ports:
+      - "3001:3001"
+    depends_on:
+      - grpc-server
+    environment:
+      - GRPC_PORT=50051
+      - GATEWAY_PORT=3001
+      - GRPC_HOST=grpc-server
+
+  ws-gateway:
+    build: .
+    command: npm run ws
+    ports:
+      - "3002:3002"
+    depends_on:
+      - grpc-server
+    environment:
+      - GRPC_PORT=50051
+      - WS_PORT=3002
+      - GRPC_HOST=grpc-server
+
+  frontend:
+    build: .
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "8080:8080"
+    depends_on:
+      - rest-gateway
+      - ws-gateway
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - VITE_WS_URL=ws://localhost:3002
