@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package bnm_ilits;
+
+// ============================================================
+//  DashboardService — statistik dan monitoring real-time
+//  Unary: GetStats, GetRequestsByDivision
+//  Server Streaming: StreamStats (update tiap 3 detik)
+// ============================================================
+service DashboardService {
+  // UNARY — Snapshot statistik saat ini
+  rpc GetStats (StatsRequest) returns (StatsResponse);
+
+  // UNARY — Daftar request per divisi
+  rpc GetRequestsByDivision (DivisionFilter) returns (DivisionStatsResponse);
+
+  // SERVER STREAMING — Stream update stats secara real-time
+  rpc StreamStats (StatsStreamConfig) returns (stream StatsSnapshot);
+}
+
+// --- Messages ---
+
+message StatsRequest {
+  string period = 1;  // "today" | "week" | "month" | "all"
+}
+
+message DivisionFilter {
+  string division = 1;
+}
+
+message StatsStreamConfig {
+  int32  interval_seconds = 1;  // interval update (default 3)
+  string division         = 2;  // kosong = semua
+}
+
+message DivisionStats {
+  string division      = 1;
+  int32  total         = 2;
+  int32  pending       = 3;
+  int32  in_progress   = 4;
+  int32  completed     = 5;
+  int32  revision      = 6;
+  int32  rejected      = 7;
+}
+
+message StatsSnapshot {
+  int32  total_requests     = 1;
+  int32  total_pending      = 2;
+  int32  total_in_progress  = 3;
+  int32  total_completed    = 4;
+  int32  total_revision     = 5;
+  int32  total_rejected     = 6;
+  int32  active_clients     = 7;
+  string timestamp          = 8;
+  repeated DivisionStats by_division = 9;
+}
+
+message StatsResponse {
+  bool   success     = 1;
+  string message     = 2;
+  StatsSnapshot data = 3;
+}
+
+message DivisionStatsResponse {
+  bool   success      = 1;
+  DivisionStats data  = 2;
+}

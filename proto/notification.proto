@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package bnm_ilits;
+
+// ============================================================
+//  NotificationService — sistem notifikasi antar divisi
+//  Unary: SendNotification, GetNotifications
+//  Bi-directional Streaming: NotificationStream
+// ============================================================
+service NotificationService {
+  // UNARY — Kirim notifikasi ke divisi tertentu
+  rpc SendNotification (NotificationInput) returns (NotificationResponse);
+
+  // UNARY — Ambil semua notifikasi untuk divisi tertentu
+  rpc GetNotifications (GetNotifFilter) returns (NotificationListResponse);
+
+  // BI-DIRECTIONAL STREAMING — Channel notifikasi dua arah antar divisi
+  // Client kirim pesan → Server broadcast ke semua subscriber
+  rpc NotificationStream (stream NotificationMessage) returns (stream NotificationMessage);
+}
+
+// --- Messages ---
+
+message NotificationInput {
+  string from_division = 1;
+  string to_division   = 2;  // "ALL" untuk broadcast
+  string type          = 3;  // "REQUEST_UPDATE" | "REMINDER" | "CHAT" | "SYSTEM"
+  string title         = 4;
+  string body          = 5;
+  string request_id    = 6;  // opsional, terkait request
+}
+
+message NotificationMessage {
+  string id           = 1;
+  string from         = 2;
+  string to           = 3;
+  string type         = 4;
+  string title        = 5;
+  string body         = 6;
+  string request_id   = 7;
+  string timestamp    = 8;
+}
+
+message GetNotifFilter {
+  string division = 1;
+  int32  limit    = 2;  // 0 = semua
+}
+
+message NotificationResponse {
+  bool   success = 1;
+  string message = 2;
+  NotificationMessage data = 3;
+}
+
+message NotificationListResponse {
+  bool   success             = 1;
+  int32  total               = 2;
+  repeated NotificationMessage data = 3;
+}

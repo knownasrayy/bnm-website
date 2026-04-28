@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package bnm_ilits;
+
+// ============================================================
+//  RequestService — menangani semua operasi request kreatif
+//  Unary: CreateRequest, GetRequest, ListRequests, UpdateStatus
+//  Server Streaming: WatchRequests
+// ============================================================
+service RequestService {
+  // UNARY — Membuat request baru
+  rpc CreateRequest (CreateRequestInput) returns (RequestResponse);
+
+  // UNARY — Mendapatkan satu request berdasarkan ID
+  rpc GetRequest (RequestId) returns (RequestResponse);
+
+  // UNARY — Mendapatkan semua request (dengan filter opsional)
+  rpc ListRequests (ListRequestsFilter) returns (RequestListResponse);
+
+  // UNARY — Update status request
+  rpc UpdateRequestStatus (UpdateStatusInput) returns (RequestResponse);
+
+  // SERVER STREAMING — Stream real-time setiap ada request baru / update
+  rpc WatchRequests (WatchFilter) returns (stream RequestEvent);
+}
+
+// --- Messages ---
+
+message CreateRequestInput {
+  string requester_name  = 1;
+  string division        = 2;
+  string contact         = 3;
+  string target_division = 4;
+  string request_type    = 5;
+  string title           = 6;
+  string description     = 7;
+  string references      = 8;
+  string deadline        = 9;  // ISO string
+}
+
+message RequestId {
+  string id = 1;
+}
+
+message ListRequestsFilter {
+  string division = 1;   // kosong = semua
+  string status   = 2;   // kosong = semua
+}
+
+message UpdateStatusInput {
+  string id     = 1;
+  string status = 2;  // pending | in_progress | revision | completed | rejected
+  string note   = 3;  // catatan dari BnM (opsional)
+}
+
+message WatchFilter {
+  string division = 1;  // kosong = semua divisi
+}
+
+message RequestData {
+  string id              = 1;
+  string requester_name  = 2;
+  string division        = 3;
+  string contact         = 4;
+  string target_division = 5;
+  string request_type    = 6;
+  string title           = 7;
+  string description     = 8;
+  string references      = 9;
+  string deadline        = 10;
+  string status          = 11;
+  string created_at      = 12;
+  string updated_at      = 13;
+  string note            = 14;
+}
+
+message RequestResponse {
+  bool   success = 1;
+  string message = 2;
+  RequestData data = 3;
+}
+
+message RequestListResponse {
+  bool   success       = 1;
+  int32  total         = 2;
+  repeated RequestData data = 3;
+}
+
+message RequestEvent {
+  string event_type  = 1;  // "CREATED" | "UPDATED"
+  RequestData data   = 2;
+  string timestamp   = 3;
+}
